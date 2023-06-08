@@ -3,5 +3,6 @@
 /__pycache__
 /detectron2
 /cocoapi
+/data_jsons
 /weights
 *.ipynb
