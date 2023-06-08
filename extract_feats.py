@@ -36,12 +36,41 @@ from tqdm import tqdm
 
 import vision_transformer as vits
 
+class PadTransform(object):
+    def __init__(self, resize):
+        self.resize = resize
 
+    def __call__(self, img): # img: PIL Image
+        if isinstance(img, np.ndarray):
+            cv2.resize(img, (224,224), cv2.INTER_LANCZOS4)
+            img = Image.fromarray(img)
+        
+        w,h = img.width, img.height
+
+        if h > w:
+            resize = (self.resize, round(self.resize*w/h))
+            padding = (round(self.resize*(1-w/h)/2), 0) # rounding error 때문에 발생하는 padding 값 에러 확인할 것.
+        
+        else:
+            resize = (round(self.resize*h/w), self.resize)
+            padding = (0,round(self.resize*(1-h/w)/2))
+        
+
+        transform = pth_transforms.Compose(
+            [
+                pth_transforms.Resize(resize),
+                pth_transforms.Pad(padding),
+                pth_transforms.Resize((self.resize, self.resize)), # to ensure that transformed image has a given shape.
+                pth_transforms.ToTensor(),
+                pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            ]
+        )
+        return transform(img)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
-        choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
+        choices=['vit_tiny', 'vit_small', 'vit_base', 'vit_large'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=16, type=int, help='Patch resolution of the model.')
     parser.add_argument('--pretrained_weights', default='', type=str,
         help="Path to pretrained weights to load.")
@@ -50,10 +79,12 @@ if __name__ == '__main__':
     parser.add_argument("--data_path", default=None, type=str, help="Path of the image to load.")
     parser.add_argument("--image_size", default=(224, 224), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='.', help='Path where to save visualizations.')
+    parser.add_argument('--output_file', default='feats_dino.pkl', help='File Name')
     parser.add_argument('--box_file', default='.')
+    parser.add_argument('--device', type=int, default=0)
     args = parser.parse_args()
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device(f"cuda:{args.device}") if torch.cuda.is_available() else torch.device("cpu")
     # build model
     model = vits.__dict__[args.arch](patch_size=args.patch_size, num_classes=0)
     for p in model.parameters():
@@ -107,11 +138,12 @@ if __name__ == '__main__':
                 continue
             imgs.append(os.path.join(args.data_path, p))
 
-    transform = pth_transforms.Compose([
+    resize_transform = pth_transforms.Compose([
         pth_transforms.Resize(args.image_size),
         pth_transforms.ToTensor(),
         pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
+    transform = PadTransform(args.image_size[0])
     feat_dict = {}
 
     for id_, img_path in tqdm(enumerate(imgs), total=len(imgs)):
@@ -134,7 +166,18 @@ if __name__ == '__main__':
                     pdb.set_trace()"""
         # imgs.append(im.convert('RGB'))
         if imgs:
-            imgs = torch.stack([transform(img) for img in imgs])
+            try:
+                imgs = torch.stack([transform(img) for img in imgs])
+            except:
+                imgs_tmp = []
+                for img in imgs:
+                    try:
+                        imgs_tmp.append(transform(img))
+                    except ValueError:
+                        imgs_tmp.append(resize_transform(img)) # TODO: discard invalid boxes
+                
+                imgs = torch.stack(imgs_tmp)
+
             # pdb.set_trace()
             # make the image divisible by the patch size
             w, h = imgs.shape[1] - imgs.shape[1] % args.patch_size, imgs.shape[2] - imgs.shape[2] % args.patch_size
@@ -151,5 +194,5 @@ if __name__ == '__main__':
             feats = []
         # pdb.set_trace()
         feat_dict[key] = feats
-    with open(os.path.join(args.output_dir, 'feats_dino.pkl'), 'wb') as f:
+    with open(os.path.join(args.output_dir, args.output_file), 'wb') as f:
         pickle.dump(feat_dict, f)
