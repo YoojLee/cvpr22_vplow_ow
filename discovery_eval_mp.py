@@ -439,7 +439,7 @@ def eval_discovery_metrics(roi_dump, gt_dump, cache_meta, all_labels,
 def create_gt():
     # Load ground truth file
     gt_dump = {}
-    with open('/vulcanscratch/anubhav/AbhinavLab/code/cvpr22_vplow_ow/data_jsons/instances_train2014.json', 'rb') as f:
+    with open('/home/work/yujin/cvpr22_vplow_ow/data_jsons/instances_train2014.json', 'rb') as f:
         gt = json.load(f)
 
     gt_class_mapping = {ele['id']: idx + 1 for idx, ele in
