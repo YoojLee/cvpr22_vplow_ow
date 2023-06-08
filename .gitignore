@@ -1,0 +1,7 @@
+/voc2007
+/experiments
+/__pycache__
+/detectron2
+/cocoapi
+/weights
+*.ipynb
