@@ -7,6 +7,7 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 import numpy as np
+import pandas as pd
 
 coco_classes = ('__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
  'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign',
@@ -36,6 +37,24 @@ def argparser():
                         default='data_jsons/instances_coco_minival.json')
 
     return parser.parse_args()
+
+def dump_output(output, output_dir=None):
+    # First convert to correct output format and then dump to disk
+    # output format id,x1,y1,x2,y2,label
+    # assert boxes.shape[1] == 4
+    # assert labels.shape[1] == 1
+    # assert ids.shape[1] == 1
+    # assert ids.shape[1] == 1
+    # output = np.concatenate([ids, boxes, labels, scores], axis=1)
+    
+    df = pd.DataFrame(output)
+    bbox_expand = df['bbox'].apply(lambda x: pd.Series([x[0], x[1], x[2], x[3]]))
+    df = pd.concat([df, bbox_expand], axis=1).drop('bbox', axis=1).loc[:, ['image_id', 0,1,2,3,'category_id', 'score']]
+    df.columns=['image_id', 'x1', 'y1', 'x2', 'y2', 'cluster_id', 'conf_score']
+
+    if output_dir is not None:
+        df.to_csv(os.path.join(output_dir, 'detection_result.csv'), index=None)
+    return df
 
 
 if __name__ == '__main__':
@@ -96,6 +115,10 @@ if __name__ == '__main__':
         # closer to the centroid, the more confident about class
         res['score'] = 1 - res['score']/max_cluster_distances[og_assign]
         all_results[idx] = res
+    
+    print(all_results)
+    _ = dump_output(all_results, 
+                    output_dir=args.output_dir)
 
     # evaluate mAP
     cocoGt = COCO(args.gt_file)
